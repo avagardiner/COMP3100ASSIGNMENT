@@ -1,152 +1,164 @@
-import java.io.*;
-import java.net.*;
-import java.util.*;
-import javax.xml.parsers.*;
-import org.w3c.dom.*;
-import org.xml.sax.*;
-import pre-compiled.Server;
+import java.io.BufferedReader;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.InputStreamReader;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 public class Client {
-    private static final int DEFAULT_PORT = 50000;
-    private static final String DEFAULT_HOSTNAME = "localhost";
-    private static final String QUIT_MESSAGE = "QUIT\n";
-    private static final String JOBS_PREFIX = "JOBS ";
-    private Socket socket;
-    private BufferedReader in;
-    private BufferedWriter out;
-    private Server[] servers;
-    private int serverIndex;
 
-    public Client(String hostname, int port) throws IOException {
-        socket = new Socket(hostname, port);
-        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
-    }
+    public static void main(String[] args) {
 
-    public void run() throws IOException, ParserConfigurationException, SAXException {
-        // Send HELLO message to server
-        out.write("HELO Client\n");
-        out.flush();
+        HashMap<String, Integer> serverCores = new HashMap<>();
+        HashMap<String, ArrayList<Job>> serverJobs = new HashMap<>();
 
-        // Read response from server
-        String response = in.readLine();
-        if (!response.startsWith("OK")) {
-            throw new IOException("Failed to connect to server: " + response);
-        }
+        try {
+            // Parse the XML configuration file (ds-system.xml) to populate the serverCores
+            // map
+            File configFile = new File("ds-system.xml");
+            DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
+            DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
+            Document doc = dBuilder.parse(configFile);
+            doc.getDocumentElement().normalize();
 
-        // Send AUTH message to server
-        out.write("AUTH dsclient\n");
-        out.flush();
+            NodeList serverList = doc.getElementsByTagName("server");
+            for (int i = 0; i < serverList.getLength(); i++) {
+                Node serverNode = serverList.item(i);
+                if (serverNode.getNodeType() == Node.ELEMENT_NODE) {
+                    Element serverElement = (Element) serverNode;
+                    String type = serverElement.getAttribute("type");
+                    int cores = Integer.parseInt(serverElement.getAttribute("coreCount"));
+                    serverCores.put(type, cores);
+                }
+                if (parts[0] != null && !parts[0].isEmpty() && parts[0].matches("\\d+")) {
+                    int id = Integer.parseInt(parts[0]);
+                }
+                if (parts.length > 0 && !parts[0].isEmpty() && parts[0].matches("\\d+")) {
+                    int id = Integer.parseInt(parts[0]);
+                }
 
-        // Read response from server
-        response = in.readLine();
-        if (!response.startsWith("OK")) {
-            throw new IOException("Authentication failed: " + response);
-        }
-
-        // Send REDY message to server
-        out.write("REDY\n");
-        out.flush();
-
-        // Read response from server
-        while (true) {
-            response = in.readLine();
-            if (response.startsWith(JOBS_PREFIX)) {
-                // Extract job information
-                String[] jobInfo = response.substring(JOBS_PREFIX.length()).split("\\s+");
-                int jobID = Integer.parseInt(jobInfo[0]);
-                int estRunTime = Integer.parseInt(jobInfo[1]);
-                int numCPUs = Integer.parseInt(jobInfo[4]);
-
-                // Dispatch job using LRR
-                String schedulingDecision = dispatchJob(jobID, estRunTime, numCPUs);
-
-                // Send scheduling decision to server
-                out.write(schedulingDecision + "\n");
-                out.flush();
-            } else if (response.equals(".")) {
-                // All jobs have been processed
-                out.write("QUIT\n");
-out.flush();
-break;
-} else {
-throw new IOException("Unexpected response from server: " + response);
-}
-}
-// Read response from server
-    response = in.readLine();
-    if (!response.equals("QUIT")) {
-        throw new IOException("Unexpected response from server: " + response);
-    }
-
-    // Send OK message to server
-    out.write("OK\n");
-    out.flush();
-
-    // Close socket and streams
-    socket.close();
-    in.close();
-    out.close();
-}
-
-private String dispatchJob(int jobID, int estRunTime, int numCPUs) throws ParserConfigurationException, SAXException, IOException {
-    // Retrieve server list from server
-    out.write("GETS Avail " + numCPUs + " " + estRunTime + " " + jobID + "\n");
-    out.flush();
-
-    // Read response from server
-    String response = in.readLine();
-    if (!response.startsWith("OK")) {
-        throw new IOException("Failed to retrieve server list: " + response);
-    }
-
-    // Parse server list
-    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-    DocumentBuilder builder = factory.newDocumentBuilder();
-    Document doc = builder.parse(new InputSource(new StringReader(response.substring(3))));
-
-    NodeList nodeList = doc.getElementsByTagName("server");
-    servers = new Server[nodeList.getLength()];
-    for (int i = 0; i < nodeList.getLength(); i++) {
-        Element element = (Element) nodeList.item(i);
-        int serverID = Integer.parseInt(element.getElementsByTagName("server_id").item(0).getTextContent());
-        int availableCPUs = Integer.parseInt(element.getElementsByTagName("available_cpus").item(0).getTextContent());
-        int availableJobs = Integer.parseInt(element.getElementsByTagName("available_jobs").item(0).getTextContent());
-        int serverLimit = Integer.parseInt(element.getElementsByTagName("server_limit").item(0).getTextContent());
-        int serverLoad = Integer.parseInt(element.getElementsByTagName("server_load").item(0).getTextContent());
-
-        servers[i] = new Server(serverID, availableCPUs, availableJobs, serverLimit, serverLoad);
-    }
-
-    // Determine best server based on LRR algorithm
-    int bestServerIndex = 0;
-    for (int i = 1; i < servers.length; i++) {
-        if (servers[i].getAvailableCPUs() > servers[bestServerIndex].getAvailableCPUs()) {
-            bestServerIndex = i;
-        } else if (servers[i].getAvailableCPUs() == servers[bestServerIndex].getAvailableCPUs()) {
-            if (servers[i].getServerLoad() < servers[bestServerIndex].getServerLoad()) {
-                bestServerIndex = i;
             }
+
+            Socket s = new Socket("127.0.0.1", 50000);
+
+            BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()));
+            DataOutputStream out = new DataOutputStream(s.getOutputStream());
+
+            System.out.println("Target IP: " + s.getInetAddress() + " Target Port: " + s.getPort());
+            System.out.println("Local IP: " + s.getLocalAddress() + " Local Port: " + s.getLocalPort());
+
+            out.write(("HELO\n").getBytes());
+            out.flush();
+            System.out.println("SENT: HELO");
+
+            String str = in.readLine();
+            System.out.println("RCVD: " + str);
+
+            out.write(("AUTH " + System.getProperty("user.name") + "\n").getBytes());
+            out.flush();
+            System.out.println("SENT: AUTH " + System.getProperty("user.name"));
+
+            str = in.readLine();
+            System.out.println("RCVD: " + str);
+
+            out.write(("REDY\n").getBytes());
+            out.flush();
+            System.out.println("SENT: REDY");
+
+            while (true) {
+                str = in.readLine();
+                System.out.println("RCVD: " + str);
+
+                if (str.equals("NONE")) {
+                    break;
+                }
+
+                String[] parts = str.split("\\s+");
+                int id = Integer.parseInt(parts[0]);
+                String serverType = parts[4];
+                int estRuntime = Integer.parseInt(parts[3]);
+                int cores = Integer.parseInt(parts[5]);
+                int submitTime = Integer.parseInt(parts[1]);
+
+                Job job = new Job(id, submitTime, estRuntime, cores, serverType);
+
+                // Schedule job to the first server of the largest type
+                int largestCores = 0;
+                String largestType = "";
+                for (Map.Entry<String, Integer> entry : serverCores.entrySet()) {
+                    if (entry.getValue() > largestCores) {
+                        largestCores = entry.getValue();
+                        largestType = entry.getKey();
+                    }
+                }
+
+                if (!serverJobs.containsKey(largestType)) {
+                    serverJobs.put(largestType, new ArrayList<>());
+                }
+                serverJobs.put(largestType, serverJobs.get(largestType));
+                serverJobs.get(largestType).add(job);
+                out.write(("SCHD " + job.getId() + " " + largestType + " 0\n").getBytes());
+                out.flush();
+                System.out.println("SENT: SCHD " + job.getId() + " " + largestType + " 0");
+            }
+
+            out.write(("QUIT\n").getBytes());
+            out.flush();
+            System.out.println("SENT: QUIT");
+
+            str = in.readLine();
+            System.out.println("RCVD: " + str);
+
+            in.close();
+            out.close();
+            s.close();
+
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
-
-    // Set current server index
-    serverIndex = bestServerIndex;
-
-    // Return scheduling decision
-    return "SCHD " + jobID + " " + servers[bestServerIndex].getServerType() + " " + servers[bestServerIndex].getServerID();
 }
 
-public static void main(String[] args) {
-    try {
-        String hostname = args.length > 0 ? args[0] : DEFAULT_HOSTNAME;
-        int port = args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_PORT;
+class Job {
+    private int id;
+    private int submitTime;
+    private int estRuntime;
+    private int cores;
+    private String serverType;
 
-        Client client = new Client(hostname, port);
-        client.run();
-    } catch (IOException | ParserConfigurationException | SAXException e) {
-        System.err.println("Error: " + e.getMessage());
+    public Job(int id, int submitTime, int estRuntime, int cores, String serverType) {
+        this.id = id;
+        this.submitTime = submitTime;
+        this.estRuntime = estRuntime;
+        this.cores = cores;
+        this.serverType = serverType;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    public int getSubmitTime() {
+        return submitTime;
+    }
+
+    public int getEstRuntime() {
+        return estRuntime;
+    }
+
+    public int getCores() {
+        return cores;
+    }
+
+    public String getServerType() {
+        return serverType;
     }
 }
-}
-
