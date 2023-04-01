@@ -1,79 +1,88 @@
 import java.io.BufferedReader;
-import java.io.IOException;
+import java.io.DataOutputStream;
 import java.io.InputStreamReader;
-import java.io.PrintWriter;
 import java.net.Socket;
 
 public class DsClient {
 
-    private static final String SERVER_ADDRESS = "127.0.0.1";
-    private static final int SERVER_PORT = 50000;
+    private String serverAddress;
+    private int serverPort;
+    private String username;
+    private Socket socket;
+    private BufferedReader reader;
+    private DataOutputStream writer;
 
-    public static void main(String[] args) throws IOException {
-        Socket socket = new Socket(SERVER_ADDRESS, SERVER_PORT);
-        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+    public DsClient(String serverAddress, int serverPort, String username) {
+        this.serverAddress = serverAddress;
+        this.serverPort = serverPort;
+        this.username = username;
+    }
+
+    public void run() throws Exception {
+        // Create a socket and initialize input and output streams
+        socket = new Socket(serverAddress, serverPort);
+        reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        writer = new DataOutputStream(socket.getOutputStream());
 
         // Send HELO and receive OK
-        out.println("HELO");
-        in.readLine();
+        writer.writeBytes("HELO\n");
+        reader.readLine();
 
         // Send AUTH and receive OK
-        out.println("AUTH Ava Gardiner");
-        in.readLine();
+        writer.writeBytes("AUTH " + username + "\n");
+        reader.readLine();
 
-        // Main loop
-        String inputLine;
-        while ((inputLine = in.readLine()) != null) {
-            if (inputLine.equals("NONE")) {
-                break;
-            }
-            if (inputLine.startsWith("JOBN")) {
-                // Parse job information
-                String[] tokens = inputLine.split("\\s+");
-                int jobId = Integer.parseInt(tokens[1]);
-                int submitTime = Integer.parseInt(tokens[2]);
-                int estRuntime = Integer.parseInt(tokens[3]);
-                int cores = Integer.parseInt(tokens[4]);
-                int memory = Integer.parseInt(tokens[5]);
-                int disk = Integer.parseInt(tokens[6]);
+        String message;
+        while ((message = reader.readLine()) != null && !message.equals("NONE")) {
+            if (message.equals("JOBN")) {
+                // Identify the largest server type using GETS
+                writer.writeBytes("GETS All\n");
+                String response = reader.readLine();
+                String[] parts = response.split("\\s+");
+                int nRecs = Integer.parseInt(parts[1]);
+                int recSize = Integer.parseInt(parts[2]);
+                writer.writeBytes("OK\n");
 
-                // Determine largest server type
-                out.println("GETS All");
-                inputLine = in.readLine();
-                String largestServerType = "";
-                int largestServerCores = 0;
-                while (inputLine.startsWith("DATA")) {
-                    String[] records = inputLine.split("\\s+");
-                    int numRecords = Integer.parseInt(records[1]);
-                    int recordSize = Integer.parseInt(records[2]);
-                    for (int i = 0; i < numRecords; i++) {
-                        inputLine = in.readLine();
-                        records = inputLine.split("\\s+");
-                        String serverType = records[0];
-                        int serverCores = Integer.parseInt(records[4]);
-                        if (serverCores > largestServerCores) {
-                            largestServerType = serverType;
-                            largestServerCores = serverCores;
-                        }
+                String largestServerType = null;
+                int largestServerCount = -1;
+
+                for (int i = 0; i < nRecs; i++) {
+                    String record = reader.readLine();
+                    String[] fields = record.split("\\s+");
+                    String serverType = fields[0];
+                    int serverCount = Integer.parseInt(fields[1]);
+
+                    if (largestServerType == null || serverCount > largestServerCount) {
+                        largestServerType = serverType;
+                        largestServerCount = serverCount;
                     }
-                    out.println("OK");
-                    inputLine = in.readLine();
                 }
 
-                // Schedule job on largest server type
-                out.println("SCHD " + jobId + " " + largestServerType + " 0");
+                writer.writeBytes("OK\n");
+                reader.readLine();
+
+                // Schedule the job using SCHD
+                String[] jobParts = reader.readLine().split("\\s+");
+                String jobID = jobParts[2];
+                writer.writeBytes("SCHD " + jobID + " " + largestServerType + " 0\n");
+
+                // Add a new line character
+                writer.writeBytes("\n");
             } else {
-                out.println("REDY");
+                writer.writeBytes("REDY\n");
             }
         }
 
         // Send QUIT and receive QUIT
-        out.println("QUIT");
-        in.readLine();
+        writer.writeBytes("QUIT\n");
+        reader.readLine();
 
-        // Close socket
+        // Close the socket
         socket.close();
     }
 
+    public static void main(String[] args) throws Exception {
+        DsClient client = new DsClient("127.0.0.1", 50000, "username");
+        client.run();
+    }
 }
