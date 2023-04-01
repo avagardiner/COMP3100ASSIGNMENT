@@ -51,6 +51,15 @@ public class Client {
             str = in.readLine();
             System.out.println("RCVD: " + str);
 
+            // Step 7: Send a message to gracefully terminate the simulation
+            out.writeUTF("QUIT\n");
+            out.flush();
+            System.out.println("SENT: QUIT");
+
+            // Step 8: Wait for the server to finish processing remaining jobs and terminate
+            str = in.readLine();
+            System.out.println("RCVD: " + str);
+
             in.close();
             out.close();
             s.close();
