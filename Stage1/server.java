@@ -20,8 +20,8 @@ public class server {
                 Socket socket = serverSocket.accept();
                 System.out.println("Accepted connection from " + socket.getInetAddress() + ":" + socket.getPort());
 
-                DataInputStream din = new DataInputStream(socket.getInputStream());
-                DataOutputStream dout = new DataOutputStream(socket.getOutputStream());
+                DataInputStream in = new DataInputStream(socket.getInputStream());
+                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
                 try {
                     TimeUnit.SECONDS.sleep(10);
@@ -29,20 +29,20 @@ public class server {
                     System.out.println(e);
                 }
 
-                String str = (String) din.readUTF();
+                String str = (String) in.readUTF();
                 System.out.println("Received from client: " + str);
 
-                dout.writeUTF("Hi from server!");
+                out.writeUTF("Hi from server!");
                 System.out.println("Sent to client: Hi from server!");
 
-                str = (String) din.readUTF();
+                str = (String) in.readUTF();
                 System.out.println("Received from client: " + str);
 
-                dout.writeUTF("Bye from server!");
+                out.writeUTF("Bye from server!");
                 System.out.println("Sent to client: Bye from server!");
 
-                din.close();
-                dout.close();
+                in.close();
+                out.close();
                 socket.close();
             }
 

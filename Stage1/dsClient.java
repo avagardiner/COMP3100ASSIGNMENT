@@ -11,8 +11,8 @@ public class dsClient {
                 InetAddress aHost = InetAddress.getByName(args[0]);
                 int aPort = Integer.parseInt(args[1]);
                 Socket s = new Socket(aHost, aPort);
-                DataOutputStream dout = new DataOutputStream(s.getOutputStream());
-                DataInputStream din = new DataInputStream(s.getInputStream());
+                DataOutputStream out = new DataOutputStream(s.getOutputStream());
+                DataInputStream in = new DataInputStream(s.getInputStream());
 
                 System.out.println("Target IP: " + s.getInetAddress() + " Target Port: " + s.getPort());
                 System.out.println("Local IP: " + s.getLocalAddress() + " Local Port: " + s.getLocalPort());
@@ -23,20 +23,20 @@ public class dsClient {
                     System.out.println(e);
                 }
 
-                dout.writeUTF("HELO");
+                out.writeUTF("HELO");
                 System.out.println("SENT: HELO");
 
-                String str = (String) din.readUTF();
+                String str = (String) in.readUTF();
                 System.out.println("RCVD: " + str);
 
-                dout.writeUTF("BYE");
+                out.writeUTF("BYE");
                 System.out.println("SENT: BYE");
 
-                str = (String) din.readUTF();
+                str = (String) in.readUTF();
                 System.out.println("RCVD: " + str);
 
-                din.close();
-                dout.close();
+                in.close();
+                out.close();
                 s.close();
             } catch (Exception e) {
                 System.out.println(e);
